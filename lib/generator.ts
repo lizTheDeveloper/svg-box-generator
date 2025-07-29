@@ -1,11 +1,29 @@
+/**
+ * @file This is the core logic engine for the book light generator.
+ * It orchestrates the entire process from user input to final, placed parts.
+ *
+ * The main flow is:
+ * 1. `generatePlacedParts` is the entry point.
+ * 2. It calls `mkParts` to create all the raw geometric `Part` objects for each book job.
+ * 3. It then enters a loop:
+ *    a. It calls `packer.pack` to attempt to place the remaining parts.
+ *    b. It calls `isPartInBounds` to rigorously verify that each placed part's true geometry fits on the sheet.
+ *    c. Any parts that fail verification are collected and re-packed onto new sheets in the next loop iteration.
+ * 4. This continues until all parts are validly placed.
+ */
 import type { Globals, BookJob, Part, PlacedPart, Rect, EdgeParams, Point } from "./types"
 import { pack } from "./packer"
 
 // --- Main Orchestration ---
 
 /**
- * Checks if a placed part is entirely within the sheet's printable area
- * by calculating the absolute bounding box of its transformed geometry.
+ * Performs a rigorous check to ensure a placed part's entire geometry is within the sheet's printable area.
+ * It transforms every point of the part's contour and holes into sheet coordinates and checks
+ * them against the sheet boundaries defined by the global margin.
+ * This is the final source of truth for placement validity.
+ * @param p - The `PlacedPart` to verify.
+ * @param g - The global settings.
+ * @returns `true` if the part is entirely within bounds, `false` otherwise.
  */
 function isPartInBounds(p: PlacedPart, g: Globals): boolean {
   const L_BOUND = g.margin - 1e-6
@@ -45,6 +63,14 @@ function isPartInBounds(p: PlacedPart, g: Globals): boolean {
   return minX >= L_BOUND && maxX <= R_BOUND && minY >= T_BOUND && maxY <= B_BOUND
 }
 
+/**
+ * The main orchestration function.
+ * Takes user jobs and global settings, generates all geometric parts, and runs the pack-then-verify loop
+ * until all parts are successfully placed on sheets.
+ * @param jobs - An array of `BookJob` objects from the user.
+ * @param globals - The global settings.
+ * @returns A flat array of all `PlacedPart`s, with correct sheet indices and positions.
+ */
 export function generatePlacedParts(jobs: BookJob[], globals: Globals): PlacedPart[] {
   const allParts: Part[] = jobs.flatMap((job) => mkParts(job, globals))
   const allPartsByUid = new Map(allParts.map((p) => [p.uid, p]))
@@ -101,6 +127,12 @@ function getBookColorPalette(): string[] {
 
 // --- Part Factory ---
 
+/**
+ * A factory function that creates all the necessary `Part` objects for a single `BookJob`.
+ * @param job - The book job to create parts for.
+ * @param g - The global settings.
+ * @returns An array of `Part` objects (BASE, LID, FRONT, etc.).
+ */
 function mkParts(job: BookJob, g: Globals): Part[] {
   const { W_int, D_int, H_wall } = deriveInner(job)
 
@@ -220,6 +252,18 @@ function deriveInner(job: BookJob) {
   return { W_int, D_int, H_wall }
 }
 
+/**
+ * Generates the complete geometry for a single finger-jointed panel.
+ * This is the heart of the geometry creation, responsible for calculating the path `d` attribute
+ * for the outer cut, as well as locating stress-relief holes.
+ * @param outerW - The core width of the panel (inside the joints).
+ * @param outerH - The core height of the panel (inside the joints).
+ * @param edges - An object defining the joint properties for each of the four edges.
+ * @param features - Additional features like magnet holes (not implemented at this level).
+ * @param g - The global settings.
+ * @param job - The parent book job, for parameters like joint clearance.
+ * @returns An object containing all geometric data for the panel.
+ */
 function makeFingerJointedPanel(
   outerW: number,
   outerH: number,

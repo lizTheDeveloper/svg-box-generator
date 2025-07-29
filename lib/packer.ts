@@ -1,3 +1,11 @@
+/**
+ * @file Implements the packing algorithm for arranging parts onto sheets.
+ * This uses a version of the MaxRects algorithm (Best Short Side Fit heuristic).
+ * It's designed to efficiently place parts while respecting a defined gap between them.
+ * The core strategy is to treat each part as if it's larger by the size of the gap,
+ * ensuring that the final placements are always valid and never overlap.
+ */
+
 import type { Part, PlacedPart, Globals } from "./types"
 
 type FreeRect = { x: number; y: number; w: number; h: number }
@@ -5,6 +13,14 @@ type Candidate = { score: number; rot: boolean; x: number; y: number; w: number;
 
 const EPS = 1e-6
 
+/**
+ * Main packing function. It takes a list of parts and orchestrates the packing process
+ * across multiple sheets.
+ * @param parts - An array of `Part` objects to be placed.
+ * @param globals - The global settings, including sheet dimensions and gaps.
+ * @param startSheetIndex - The index to start numbering sheets from.
+ * @returns An array of `PlacedPart` objects. Parts that could not be placed are marked with `sheetIndex: -1`.
+ */
 export function pack(parts: Part[], globals: Globals, startSheetIndex = 0): PlacedPart[] {
   const { sheet_w, sheet_h, margin, part_gap, allow_rotation } = globals
   const packableW = sheet_w - 2 * margin
@@ -40,6 +56,15 @@ export function pack(parts: Part[], globals: Globals, startSheetIndex = 0): Plac
   return placedParts
 }
 
+/**
+ * Packs as many parts as possible onto a single sheet.
+ * @param partsIn - The list of parts to attempt to pack.
+ * @param w - The packable width of the sheet.
+ * @param h - The packable height of the sheet.
+ * @param allowRotation - Whether parts can be rotated 90 degrees.
+ * @param gap - The minimum required distance between parts.
+ * @returns An object containing the list of `placed` parts and `remaining` parts that didn't fit.
+ */
 function packSheet(partsIn: Part[], w: number, h: number, allowRotation: boolean, gap: number) {
   const placed: { part: Part; x: number; y: number; rotated: boolean }[] = []
   const remaining: Part[] = []
@@ -70,6 +95,15 @@ function packSheet(partsIn: Part[], w: number, h: number, allowRotation: boolean
   return { placed, remaining }
 }
 
+/**
+ * Finds the best position for a single part within the available free rectangles.
+ * It uses the "Best Short Side Fit" (BSSF) heuristic.
+ * @param part - The part to place.
+ * @param free - A list of available rectangular spaces.
+ * @param allowRotation - Whether the part can be rotated.
+ * @param gap - The required gap to add to the part's dimensions for collision detection.
+ * @returns The best candidate position, or null if the part cannot fit anywhere.
+ */
 function chooseMaxRectsPosition(part: Part, free: FreeRect[], allowRotation: boolean, gap: number): Candidate | null {
   let best: Candidate | null = null
   for (let i = 0; i < free.length; i++) {
@@ -91,6 +125,15 @@ function chooseMaxRectsPosition(part: Part, free: FreeRect[], allowRotation: boo
   return best
 }
 
+/**
+ * Splits the free rectangles based on the area consumed by a newly placed part.
+ * After a part is placed, this function updates the list of available spaces.
+ * @param free - The current list of free rectangles.
+ * @param used - The rectangle representing the newly placed part (including its gap).
+ * @param sheetW - The total packable width of the sheet.
+ * @param sheetH - The total packable height of the sheet.
+ * @returns A new, updated list of free rectangles.
+ */
 function splitFreeRects(free: FreeRect[], used: FreeRect, sheetW: number, sheetH: number): FreeRect[] {
   const out: FreeRect[] = []
   for (const fr of free) {
@@ -128,6 +171,12 @@ function splitFreeRects(free: FreeRect[], used: FreeRect, sheetW: number, sheetH
     .filter((r) => r.w > EPS && r.h > EPS)
 }
 
+/**
+ * Removes any free rectangles that are fully contained within another free rectangle.
+ * This is an optimization to keep the list of free spaces manageable.
+ * @param free - The list of free rectangles.
+ * @returns A pruned list of free rectangles.
+ */
 function pruneFreeRects(free: FreeRect[]): FreeRect[] {
   const out: FreeRect[] = []
   for (let i = 0; i < free.length; i++) {
